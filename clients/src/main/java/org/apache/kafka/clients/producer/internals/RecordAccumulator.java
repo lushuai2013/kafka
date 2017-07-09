@@ -68,6 +68,8 @@ public final class RecordAccumulator {
     private final long retryBackoffMs;
     private final BufferPool free;
     private final Time time;
+    //TopicPartition与RecordBatch集合的映射关系,类型是CopyOnWriteMap,是线程安全的集合,
+    // 但Deque是ArrayDeque是非线程安全的集合,在追加或发送RecordBatch的时候需要加锁
     private final ConcurrentMap<TopicPartition, Deque<RecordBatch>> batches;
     private final IncompleteRecordBatches incomplete;
     // The following variables are only accessed by the sender thread, so we don't need to protect them.
