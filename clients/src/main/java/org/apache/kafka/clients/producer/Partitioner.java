@@ -21,6 +21,7 @@ import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.Cluster;
 
 /**
+ * 消息分区接口
  * Partitioner Interface
  */
 

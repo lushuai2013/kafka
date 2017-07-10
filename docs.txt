@@ -1,0 +1,3 @@
+参考：
+kafka生产者原理详解：
+http://kaimingwan.com/post/kafka/kafkasheng-chan-zhe-yuan-li-xiang-jie

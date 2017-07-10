@@ -28,6 +28,7 @@ import org.apache.kafka.common.MetricName;
 
 
 /**
+ * Producer接口中定义了Kafka对外提供的ＡＰＩ，分为４个主要方法：send(),flush(),partitionFor(),clouse()
  * The interface for the {@link KafkaProducer}
  * @see KafkaProducer
  * @see MockProducer
@@ -35,6 +36,7 @@ import org.apache.kafka.common.MetricName;
 public interface Producer<K, V> extends Closeable {
 
     /**
+     * 发送消息，实际是将消息放入RecordAccumulator暂存，等待发送
      * Send the given record asynchronously and return a future which will eventually contain the response information.
      * 
      * @param record The record to send
@@ -43,16 +45,20 @@ public interface Producer<K, V> extends Closeable {
     public Future<RecordMetadata> send(ProducerRecord<K, V> record);
 
     /**
+     * 发送消息，消息发送成功后调用回调函数
      * Send a record and invoke the given callback when the record has been acknowledged by the server
      */
     public Future<RecordMetadata> send(ProducerRecord<K, V> record, Callback callback);
     
     /**
+     * 刷新操作，等待RecordAccumulator中所有消息发送完成，在刷新完成之前会阻塞调用的线程
      * Flush any accumulated records from the producer. Blocks until all sends are complete.
      */
     public void flush();
 
     /**
+     * 在kafkaProducer中维护一个Metadata对象用于存储Ｋafka集群元数据，Ｍetata中的元数据会定期更新．
+     * 该方法负责从metadata中获取指定Topic的分区信息
      * Get a list of partitions for the given topic for custom partition assignment. The partition metadata will change
      * over time so this list should not be cached.
      */
@@ -64,6 +70,7 @@ public interface Producer<K, V> extends Closeable {
     public Map<MetricName, ? extends Metric> metrics();
 
     /**
+     * 关闭Procuder对象，主要操作是设置close标志，等待RecordAccumulator中的消息清空，关闭sender线程
      * Close this producer
      */
     public void close();

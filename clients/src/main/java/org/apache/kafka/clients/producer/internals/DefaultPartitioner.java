@@ -27,6 +27,7 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.utils.Utils;
 
 /**
+ * 默认分区函数
  * The default partitioning strategy:
  * <ul>
  * <li>If a partition is specified in the record, use it
@@ -68,7 +69,7 @@ public class DefaultPartitioner implements Partitioner {
     public int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] valueBytes, Cluster cluster) {
         List<PartitionInfo> partitions = cluster.partitionsForTopic(topic);
         int numPartitions = partitions.size();
-        if (keyBytes == null) {
+        if (keyBytes == null) {//没有key
             int nextValue = counter.getAndIncrement();
             List<PartitionInfo> availablePartitions = cluster.availablePartitionsForTopic(topic);
             if (availablePartitions.size() > 0) {
@@ -79,6 +80,7 @@ public class DefaultPartitioner implements Partitioner {
                 return DefaultPartitioner.toPositive(nextValue) % numPartitions;
             }
         } else {
+            //如果指定了key,对key进行ｈash选择分区
             // hash the keyBytes to choose a partition
             return DefaultPartitioner.toPositive(Utils.murmur2(keyBytes)) % numPartitions;
         }
