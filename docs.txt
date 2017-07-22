@@ -1,3 +1,6 @@
 参考：
-kafka生产者原理详解：
-http://kaimingwan.com/post/kafka/kafkasheng-chan-zhe-yuan-li-xiang-jie
+1.kafka生产者原理详解：
+  http://kaimingwan.com/post/kafka/kafkasheng-chan-zhe-yuan-li-xiang-jie
+2.kafka集群Leader均衡
+  https://www.iteblog.com/archives/1612.html
+
