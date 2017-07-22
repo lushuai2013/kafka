@@ -657,6 +657,11 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     }
   }
 
+  /**
+    * 优先副本选举
+    * @param partitions
+    * @param isTriggeredByAutoRebalance
+    */
   def onPreferredReplicaElection(partitions: Set[TopicAndPartition], isTriggeredByAutoRebalance: Boolean = false) {
     info("Starting preferred replica leader election for partitions %s".format(partitions.mkString(",")))
     try {
@@ -1181,6 +1186,10 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
     }
   }
 
+  /**
+    * partition-rebalance的周期性的定时任务（提供了分区的自动均衡功能）调用该方法对失衡的broker上的相关的分区进行＂优先副本＂选举，
+    * 使得相关分区的＂优先副本＂重新成为Leader副本，整个集群的leader副本的分布也会重新恢复平衡
+    */
   private def checkAndTriggerPartitionRebalance(): Unit = {
     if (isActive()) {
       trace("checking need to trigger partition rebalance")
@@ -1193,11 +1202,13 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
           }
       }
       debug("preferred replicas by broker " + preferredReplicasForTopicsByBrokers)
+      //计算每个broker的"imbalance"比率
       // for each broker, check if a preferred replica election needs to be triggered
       preferredReplicasForTopicsByBrokers.foreach {
         case(leaderBroker, topicAndPartitionsForBroker) => {
           var imbalanceRatio: Double = 0
           var topicsNotInPreferredReplica: Map[TopicAndPartition, Seq[Int]] = null
+          //存在Leader副本，但不是以＂优先副本＂为Leader的分区集合
           inLock(controllerContext.controllerLock) {
             topicsNotInPreferredReplica =
               topicAndPartitionsForBroker.filter {
@@ -1209,9 +1220,11 @@ class KafkaController(val config : KafkaConfig, zkUtils: ZkUtils, val brokerStat
             debug("topics not in preferred replica " + topicsNotInPreferredReplica)
             val totalTopicPartitionsForBroker = topicAndPartitionsForBroker.size
             val totalTopicPartitionsNotLedByBroker = topicsNotInPreferredReplica.size
+            //计算当前broker的"imbalance"比率
             imbalanceRatio = totalTopicPartitionsNotLedByBroker.toDouble / totalTopicPartitionsForBroker
             trace("leader imbalance ratio for broker %d is %f".format(leaderBroker, imbalanceRatio))
           }
+          //broker上的"imbalance"比率大于一定阀值时，触发＂优先副本＂选举
           // check ratio and if greater than desired ratio, trigger a rebalance for the topic partitions
           // that need to be on this broker
           if (imbalanceRatio > (config.leaderImbalancePerBrokerPercentage.toDouble / 100)) {
