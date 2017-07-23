@@ -85,57 +85,73 @@ class SimpleAclAuthorizer extends Authorizer with Logging {
   private val retryBackoffJitterMs = 50
 
   /**
+    * 此方法会初始化很多信息，例如：超级用户的信息，初始化监听器加载aclCache信息
    * Guaranteed to be called before any authorize call is made.
    */
   override def configure(javaConfigs: util.Map[String, _]) {
     val configs = javaConfigs.asScala
     val props = new java.util.Properties()
     configs.foreach { case (key, value) => props.put(key, value.toString) }
-
+    //获取超级用户信息
     superUsers = configs.get(SimpleAclAuthorizer.SuperUsersProp).collect {
       case str: String if str.nonEmpty => str.split(";").map(s => KafkaPrincipal.fromString(s.trim)).toSet
     }.getOrElse(Set.empty[KafkaPrincipal])
 
+    //根据配置，初始化shoudAllowEveryoneIfNoAclIsFound字段
     shouldAllowEveryoneIfNoAclIsFound = configs.get(SimpleAclAuthorizer.AllowEveryoneIfNoAclIsFoundProp).exists(_.toString.toBoolean)
 
     // Use `KafkaConfig` in order to get the default ZK config values if not present in `javaConfigs`. Note that this
     // means that `KafkaConfig.zkConnect` must always be set by the user (even if `SimpleAclAuthorizer.ZkUrlProp` is also
     // set).
     val kafkaConfig = KafkaConfig.fromProps(props, doLog = false)
+
+    //获取Zookeeper的地址，链接超时时间，session的过期时间等配置
     val zkUrl = configs.get(SimpleAclAuthorizer.ZkUrlProp).map(_.toString).getOrElse(kafkaConfig.zkConnect)
     val zkConnectionTimeoutMs = configs.get(SimpleAclAuthorizer.ZkConnectionTimeOutProp).map(_.toString.toInt).getOrElse(kafkaConfig.zkConnectionTimeoutMs)
     val zkSessionTimeOutMs = configs.get(SimpleAclAuthorizer.ZkSessionTimeOutProp).map(_.toString.toInt).getOrElse(kafkaConfig.zkSessionTimeoutMs)
-
+　　//创建zkUtils,用于于Zookeeper进行交互
     zkUtils = ZkUtils(zkUrl,
                       zkConnectionTimeoutMs,
                       zkSessionTimeOutMs,
                       JaasUtils.isZkSecurityEnabled())
+    //检查"/kafka-acl"这个持久节点在Zookeeper中是否存在，如不存在则创建
     zkUtils.makeSurePersistentPathExists(SimpleAclAuthorizer.AclZkPath)
-
+　　　//将Zookeeper中的acls信息加载到aclCache集合中
     loadCache()
-
+　　//检查"/kafka-acl－changes"这个持久节点在Zookeeper中是否存在，如不存在则创建　
     zkUtils.makeSurePersistentPathExists(SimpleAclAuthorizer.AclChangedZkPath)
     aclChangeListener = new ZkNodeChangeNotificationListener(zkUtils, SimpleAclAuthorizer.AclChangedZkPath, SimpleAclAuthorizer.AclChangedPrefix, AclChangedNotificationHandler)
     aclChangeListener.init()
   }
 
+  /**
+    * 将传入的客户端对应的身份信息及请求操作的资源信息与上述aclCache集合匹配，决定是否有权限操作相应资源
+    * @param session The session being authenticated.
+    * @param operation Type of operation client is trying to perform on resource.
+    * @param resource Resource the client is trying to access.
+    * @return
+    */
   override def authorize(session: Session, operation: Operation, resource: Resource): Boolean = {
     val principal = session.principal
     val host = session.clientAddress.getHostAddress
+    //获取指定资源的ACLS信息
     val acls = getAcls(resource) ++ getAcls(new Resource(resource.resourceType, Resource.WildCardResource))
-
+    //检查是否存在Deny类型的ACLs信息
     //check if there is any Deny acl match that would disallow this operation.
     val denyMatch = aclMatch(session, operation, resource, principal, host, Deny, acls)
 
+    //如果有read和write权限，则默认提供Describe权限
     //if principal is allowed to read or write we allow describe by default, the reverse does not apply to Deny.
     val ops = if (Describe == operation)
       Set[Operation](operation, Read, Write)
     else
       Set[Operation](operation)
 
+    //检查是否有Allow类型的ACLs信息
     //now check if there is any allow acl that will allow this operation.
     val allowMatch = ops.exists(operation => aclMatch(session, operation, resource, principal, host, Allow, acls))
 
+    //检查是否是超级管理员；检测是否开启了shouldAllowEveryonIfNoAclISFound; 检测之前的匹配是否成功
     //we allow an operation if a user is a super user or if no acls are found and user has configured to allow all users
     //when no acls are found or if no deny acls are found and at least one allow acls matches.
     val authorized = isSuperUser(operation, resource, principal, host) ||

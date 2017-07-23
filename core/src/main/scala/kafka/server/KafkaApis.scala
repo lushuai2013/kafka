@@ -317,6 +317,14 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
   }
 
+  /**
+    * 权限控制，　调用Authorizer.authorize()方法，
+    * SimpleAclAuthorizer是kafka提供的Authorizer接口实现，它将权限信息存储在Zookeeper中
+    * @param session
+    * @param operation
+    * @param resource
+    * @return
+    */
   private def authorize(session: Session, operation: Operation, resource: Resource): Boolean =
     authorizer.map(_.authorize(session, operation, resource)).getOrElse(true)
 

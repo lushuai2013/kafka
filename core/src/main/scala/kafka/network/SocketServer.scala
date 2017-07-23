@@ -479,10 +479,16 @@ private[kafka] class Processor(val id: Int,
     }
   }
 
+  /**
+    * kafka网络层的方法，将客户端的身份封装成Session对象，
+    * 与读取到的请求信息一起放入RequestChannel中等待Handler线程处理
+    */
   private def processCompletedReceives() {
     selector.completedReceives.asScala.foreach { receive =>
       try {
+        //查找请求来自哪个kafkaChannel
         val channel = selector.channel(receive.source)
+        //从KafkaChannel中封装的SaslServerAuthenticator对象中获取authorizationID信息，并封装成Session
         val session = RequestChannel.Session(new KafkaPrincipal(KafkaPrincipal.USER_TYPE, channel.principal.getName),
           channel.socketAddress)
         val req = RequestChannel.Request(processor = id, connectionId = receive.source, session = session, buffer = receive.payload, startTimeMs = time.milliseconds, securityProtocol = protocol)
