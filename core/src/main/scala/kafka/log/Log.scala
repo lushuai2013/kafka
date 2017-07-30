@@ -304,6 +304,7 @@ class Log(val dir: File,
   }
 
   /**
+    * 向log中追加消息是在LOG.append()方法中实现的．Kafka服务端在处理生产者发来的ProducerRequest时，会将请求解析成ByteBufferMessageSet，并最终调用Log.append方法完成追加消息．
    * Append this message set to the active segment of the log, rolling over to a fresh segment if necessary.
    *
    * This method will generally be responsible for assigning offsets to the messages,
@@ -317,12 +318,14 @@ class Log(val dir: File,
    * @return Information about the appended messages including the first and last offset.
    */
   def append(messages: ByteBufferMessageSet, assignOffsets: Boolean = true): LogAppendInfo = {
-    val appendInfo = analyzeAndValidateMessageSet(messages)
+    //步骤１：检查消息的长度和CRC32校验码，返回LogAppendInfo对象
 
+    val appendInfo = analyzeAndValidateMessageSet(messages)
+    //边界检查，检查外层消息个数，如果为０，则直接返回
     // if we have any valid messages, append them to the log
     if (appendInfo.shallowCount == 0)
       return appendInfo
-
+    //将未通过analyzeAndValidateMessageSet方法检查的部分截断
     // trim any invalid bytes or partial messages before appending it to the on-disk log
     var validMessages = trimInvalidBytes(messages, appendInfo)
 
@@ -330,12 +333,15 @@ class Log(val dir: File,
       // they are valid, insert them in the log
       lock synchronized {
 
-        if (assignOffsets) {
+        if (assignOffsets) {//判断是否需要分配offset,默认是需要的
+          //获取nextOffsetMetadata记录的messageOffSet字段，从此值开始向后分配offset
           // assign offsets to the message set
           val offset = new LongRef(nextOffsetMetadata.messageOffset)
+          //使用firstOffset字段记录第一条消息的offset字段，并不受压缩消息的影响
           appendInfo.firstOffset = offset.value
           val now = time.milliseconds
           val (validatedMessages, messageSizesMaybeChanged) = try {
+            //步骤３:进一步验证，并分配offset
             validMessages.validateMessagesAndAssignOffsets(offset,
                                                            now,
                                                            appendInfo.sourceCodec,
@@ -348,10 +354,12 @@ class Log(val dir: File,
             case e: IOException => throw new KafkaException("Error in validating messages while appending to log '%s'".format(name), e)
           }
           validMessages = validatedMessages
+          //记录最后一条消息的offset，并不受压缩消息的影响
           appendInfo.lastOffset = offset.value - 1
           if (config.messageTimestampType == TimestampType.LOG_APPEND_TIME)
-            appendInfo.timestamp = now
+            appendInfo.timestamp = now//修改时间戳
 
+          //若在validateMessagesAndAssignOffset方法中修改了ByteBufferMessage的长度，则需要重新检查消息长度
           // re-validate message sizes if there's a possibility that they have changed (due to re-compression or message
           // format conversion)
           if (messageSizesMaybeChanged) {
@@ -378,19 +386,19 @@ class Log(val dir: File,
           throw new RecordBatchTooLargeException("Message set size is %d bytes which exceeds the maximum configured segment size of %d."
             .format(validMessages.sizeInBytes, config.segmentSize))
         }
-
+        //步骤５：获取activeSegment
         // maybe roll the log if this segment is full
         val segment = maybeRoll(validMessages.sizeInBytes)
-
+        //步骤６:追加消息
         // now append to the log
         segment.append(appendInfo.firstOffset, validMessages)
-
+        //步骤７：更新LEO
         // increment the log end offset
         updateLogEndOffset(appendInfo.lastOffset + 1)
 
         trace("Appended message set to log %s with first offset: %d, next offset: %d, and messages: %s"
           .format(this.name, appendInfo.firstOffset, nextOffsetMetadata.messageOffset, validMessages))
-
+        //步骤８:检测未刷新到磁盘的数据是否达到一定阀值,如果是则调用flush方法刷新
         if (unflushedMessages >= config.flushInterval)
           flush()
 

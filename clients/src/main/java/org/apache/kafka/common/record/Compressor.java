@@ -92,7 +92,7 @@ public class Compressor {
     public long maxTimestamp;
 
     public Compressor(ByteBuffer buffer, CompressionType type) {
-        this.type = type;
+        this.type = type;//从kafkaProducer传递过来的压缩类型
         this.initPos = buffer.position();
 
         this.numRecords = 0;
@@ -101,6 +101,7 @@ public class Compressor {
         this.maxTimestamp = Record.NO_TIMESTAMP;
 
         if (type != CompressionType.NONE) {
+            //如果进行消息压缩，则在buffer的首部提前空出offset和size的空间(Records.LOG-OVEREAD)以及CRC32等字段的空间(Record.RECORD_OVERHEAD)
             // for compressed records, leave space for the header and the shallow message metadata
             // and move the starting position to the value payload offset
             buffer.position(initPos + Records.LOG_OVERHEAD + Record.RECORD_OVERHEAD);
@@ -108,6 +109,7 @@ public class Compressor {
 
         // create the stream
         bufferStream = new ByteBufferOutputStream(buffer);
+        //根据压缩类型创建适当的压缩流
         appendStream = wrapForOutput(bufferStream, type, COMPRESSION_DEFAULT_BUFFER_SIZE);
     }
 
@@ -121,28 +123,32 @@ public class Compressor {
 
     public void close() {
         try {
-            appendStream.close();
+            appendStream.close(); //要压缩的消息写完了，先关闭压缩输出流
         } catch (IOException e) {
             throw new KafkaException(e);
         }
 
-        if (type != CompressionType.NONE) {
+        if (type != CompressionType.NONE) {//使用压缩算法
             ByteBuffer buffer = bufferStream.buffer();
-            int pos = buffer.position();
+            int pos = buffer.position();//保存buffer尾部位置
             // write the header, for the end offset write as number of records - 1
-            buffer.position(initPos);
-            buffer.putLong(numRecords - 1);
-            buffer.putInt(pos - initPos - Records.LOG_OVERHEAD);
+            buffer.position(initPos); //移动position指针到buffer头部
+            buffer.putLong(numRecords - 1);//写入offset,写入消息的个数
+            buffer.putInt(pos - initPos - Records.LOG_OVERHEAD);//写入size
+            //写入压缩消息的相关信息，例如，时间戳＼压缩算法等，MAGIC_VALUE为1
             // write the shallow message (the crc and value size are not correct yet)
             Record.write(buffer, maxTimestamp, null, null, type, 0, -1);
+            //计算并写入整个压缩消息的value部分长度
             // compute the fill the value size
             int valueSize = pos - initPos - Records.LOG_OVERHEAD - Record.RECORD_OVERHEAD;
             buffer.putInt(initPos + Records.LOG_OVERHEAD + Record.KEY_OFFSET_V1, valueSize);
+            //计算并写入crc32校验码
             // compute and fill the crc at the beginning of the message
             long crc = Record.computeChecksum(buffer,
                 initPos + Records.LOG_OVERHEAD + Record.MAGIC_OFFSET,
                 pos - initPos - Records.LOG_OVERHEAD - Record.MAGIC_OFFSET);
             Utils.writeUnsignedInt(buffer, initPos + Records.LOG_OVERHEAD + Record.CRC_OFFSET, crc);
+            //还原buffer的position指针
             // reset the position
             buffer.position(pos);
 
@@ -244,13 +250,13 @@ public class Compressor {
 
     public static DataOutputStream wrapForOutput(ByteBufferOutputStream buffer, CompressionType type, int bufferSize) {
         try {
-            switch (type) {
-                case NONE:
+            switch (type) {//根据不同类型创建不同的压缩流
+                case NONE://不压缩
                     return new DataOutputStream(buffer);
-                case GZIP:
+                case GZIP://gzip
                     return new DataOutputStream(new GZIPOutputStream(buffer, bufferSize));
-                case SNAPPY:
-                    try {
+                case SNAPPY://snapshot
+                    try {//使用反射方式创建
                         OutputStream stream = (OutputStream) snappyOutputStreamSupplier.get().newInstance(buffer, bufferSize);
                         return new DataOutputStream(stream);
                     } catch (Exception e) {
