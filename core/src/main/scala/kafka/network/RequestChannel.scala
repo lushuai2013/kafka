@@ -258,6 +258,7 @@ object RequestMetrics {
   val metricsMap = new scala.collection.mutable.HashMap[String, RequestMetrics]
   val consumerFetchMetricName = ApiKeys.FETCH.name + "Consumer"
   val followFetchMetricName = ApiKeys.FETCH.name + "Follower"
+  //为每种类型的请求创建对应的RequestMetrics对象
   (ApiKeys.values().toList.map(e => e.name)
     ++ List(consumerFetchMetricName, followFetchMetricName)).foreach(name => metricsMap.put(name, new RequestMetrics(name)))
 }
@@ -265,17 +266,18 @@ object RequestMetrics {
 class RequestMetrics(name: String) extends KafkaMetricsGroup {
   val tags = Map("request" -> name)
   val requestRate = newMeter("RequestsPerSec", "requests", TimeUnit.SECONDS, tags)
-  // time a request spent in a request queue
+  // time a request spent in a request queue　负责统计Request在RequestChannel的等待时间
   val requestQueueTimeHist = newHistogram("RequestQueueTimeMs", biased = true, tags)
-  // time a request takes to be processed at the local broker
+  // time a request takes to be processed at the local broker　负责统计Request在当前Broker中处理的用时
   val localTimeHist = newHistogram("LocalTimeMs", biased = true, tags)
   // time a request takes to wait on remote brokers (currently only relevant to fetch and produce requests)
+  // 负责统计此Broker发送的Request在远端Broker中处理的用时，例如FetchRequest
   val remoteTimeHist = newHistogram("RemoteTimeMs", biased = true, tags)
   // time a request is throttled (only relevant to fetch and produce requests)
   val throttleTimeHist = newHistogram("ThrottleTimeMs", biased = true, tags)
-  // time a response spent in a response queue
+  // time a response spent in a response queue　负责统计response在RequestChannel的等待时间
   val responseQueueTimeHist = newHistogram("ResponseQueueTimeMs", biased = true, tags)
-  // time to send the response to the requester
+  // time to send the response to the requester 责统计发送response的用时
   val responseSendTimeHist = newHistogram("ResponseSendTimeMs", biased = true, tags)
   val totalTimeHist = newHistogram("TotalTimeMs", biased = true, tags)
 }

@@ -32,6 +32,7 @@ import scala.collection.immutable
 trait KafkaMetricsGroup extends Logging {
 
   /**
+    * 按照一定的规则生成度量对象的MetricName
    * Creates a new MetricName object for gauges, meters, etc. created for this
    * metrics group.
    * @param name Descriptive name of the metric.
@@ -39,29 +40,40 @@ trait KafkaMetricsGroup extends Logging {
    * @return Sanitized metric name object.
    */
   private def metricName(name: String, tags: scala.collection.Map[String, String] = Map.empty) = {
+    //当前类的Class对象
     val klass = this.getClass
+    //包名
     val pkg = if (klass.getPackage == null) "" else klass.getPackage.getName
+   　//简单包名
     val simpleName = klass.getSimpleName.replaceAll("\\$$", "")
 
     explicitMetricName(pkg, simpleName, name, tags)
   }
 
-
+  /**
+    * explicitMetricName方法实现
+    * @param group
+    * @param typeName
+    * @param name
+    * @param tags
+    * @return
+    */
   private def explicitMetricName(group: String, typeName: String, name: String, tags: scala.collection.Map[String, String] = Map.empty) = {
-    val nameBuilder: StringBuilder = new StringBuilder
+    val nameBuilder: StringBuilder = new StringBuilder // 用于创建MBean的名称
 
-    nameBuilder.append(group)
+    nameBuilder.append(group) //第一部分是group，即包名
 
-    nameBuilder.append(":type=")
+    nameBuilder.append(":type=")  //第二部分是type，即类名
 
     nameBuilder.append(typeName)
 
-    if (name.length > 0) {
+    if (name.length > 0) { //第三部分是name
       nameBuilder.append(",name=")
       nameBuilder.append(name)
     }
 
     val scope: String = KafkaMetricsGroup.toScope(tags).getOrElse(null)
+    //遍历tags集合，以逗号分割每个Entry，形成字符串
     val tagsName = KafkaMetricsGroup.toMBeanName(tags)
     tagsName match {
       case Some(tn) =>

@@ -108,10 +108,10 @@ class Log(val dir: File,
   info("Completed load of log %s with log end offset %d".format(name, logEndOffset))
 
   val tags = Map("topic" -> topicAndPartition.topic, "partition" -> topicAndPartition.partition.toString)
-
+  //在Log类初始化时，会执行下面代码创建并注册Gauge对象
   newGauge("NumLogSegments",
     new Gauge[Int] {
-      def value = numberOfSegments
+      def value = numberOfSegments  //注册当前Log中的Segement对象个数
     },
     tags)
 
